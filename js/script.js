@@ -37,12 +37,21 @@ const responses = {
         "I'm here to chat and help! You can ask me about myself, have a conversation, or just say hello!",
         "Feel free to ask me anything or just chat! I can discuss various topics with you."
     ],
-    // Add your custom question here
-    lulukuktu: [
-        "Yes, Lulu loves Kutu very much!",
-        "Lulu and Kutu are best friends!",
-        "Absolutely! Lulu loves Kutu!"
-    ],
+const intents = {
+    "lulukuktu": {
+        patterns: [
+            "does lulu love kutu",
+            "does lulu love me",
+            "does kutu love lulu"
+        ],
+        responses: [
+            "Yes, Lulu loves Kutu very much!",
+            "Lulu and Kutu are best friends!",
+            "Absolutely! Lulu loves Kutu!"
+        ]
+    }
+};
+
     default: [
         "That's interesting! Tell me more.",
         "I see! Can you elaborate on that?",
