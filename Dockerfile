@@ -1,48 +1,35 @@
-FROM node:18-alpine
+FROM python:3.10-slim AS backend
 
 WORKDIR /app
 
-# Copy package files
-COPY frontend/package*.json ./frontend/
-COPY backend/package*.json ./backend/
-
-# Install frontend dependencies and build
-WORKDIR /app/frontend
-RUN npm ci
-COPY frontend/ .
-RUN npm run build
-
 # Install backend dependencies
-WORKDIR /app/backend
-RUN npm ci
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend code
 COPY backend/ .
 
-# Create combined server
-RUN echo 'const express = require("express"); \
-const path = require("path"); \
-const app = express(); \
-const port = process.env.PORT || 5000; \
-\
-app.use(express.json()); \
-\
-// Serve static files from frontend build \
-app.use(express.static(path.join(__dirname, "../frontend/build"))); \
-\
-// Your backend API routes (example) \
-app.get("/api/health", (req, res) => { \
-    res.json({ status: "OK" }); \
-}); \
-\
-// For React Router - all other requests go to React app \
-app.get("*", (req, res) => { \
-    res.sendFile(path.join(__dirname, "../frontend/build", "index.html")); \
-}); \
-\
-app.listen(port, () => { \
-    console.log(`Server running on port ${port}`); \
-});' > /app/backend/server.js
+# --- Build full application with Nginx ---
+FROM nginx:alpine
 
-EXPOSE 5000
+# Copy frontend code
+COPY . /usr/share/nginx/html
 
-WORKDIR /app/backend
-CMD ["node", "server.js"]
+# Remove default config & copy our custom reverse proxy config
+RUN rm /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy backend from previous stage
+COPY --from=backend /app /backend
+
+# Install python for backend
+RUN apk add --no-cache python3 py3-pip
+RUN pip3 install --no-cache-dir -r /backend/requirements.txt
+
+# Expose single port
+EXPOSE 80
+
+# Start backend + nginx
+CMD \
+uvicorn backend.app:app --host 0.0.0.0 --port 8000 & \
+nginx -g "daemon off;"
