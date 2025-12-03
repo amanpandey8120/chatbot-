@@ -37,11 +37,6 @@ const responses = {
         "I'm here to chat and help! You can ask me about myself, have a conversation, or just say hello!",
         "Feel free to ask me anything or just chat! I can discuss various topics with you."
     ],
-    lulukuktu: [
-        "Yes, Lulu loves Kutu very much!",
-        "Lulu and Kutu are best friends!",
-        "Absolutely! Lulu loves Kutu!"
-    ],
     default: [
         "That's interesting! Tell me more.",
         "I see! Can you elaborate on that?",
@@ -58,6 +53,11 @@ let conversationHistory = [];
 
 // Check if Ollama is available
 let ollamaAvailable = true;
+
+// DOM Elements
+const chatMessages = document.getElementById('chat-messages');
+const userInput = document.getElementById('user-input');
+const sendBtn = document.getElementById('send-btn');
 
 // Get random response from array
 function getRandomResponse(responseArray) {
@@ -81,7 +81,11 @@ async function callOllama(userMessage) {
             body: JSON.stringify({
                 model: OLLAMA_MODEL,
                 messages: conversationHistory,
-                stream: false
+                stream: false,
+                options: {
+                    temperature: 0.7,
+                    top_p: 0.9
+                }
             }),
         });
 
@@ -110,37 +114,57 @@ async function callOllama(userMessage) {
     }
 }
 
+// Check Ollama availability on startup
+async function checkOllamaAvailability() {
+    try {
+        const response = await fetch(`${OLLAMA_URL}/api/tags`, {
+            method: 'GET'
+        });
+        
+        if (response.ok) {
+            ollamaAvailable = true;
+            console.log('Ollama is available');
+        } else {
+            ollamaAvailable = false;
+            console.log('Ollama is not available');
+        }
+    } catch (error) {
+        ollamaAvailable = false;
+        console.log('Ollama is not available');
+    }
+}
+
 function getBotResponse(message) {
     const lowerMessage = message.toLowerCase().trim();
 
     // Greetings
     if (lowerMessage.match(/^(hi|hello|hey|greetings|good morning|good afternoon|good evening)/)) {
-        return responses.greetings[Math.floor(Math.random() * responses.greetings.length)];
+        return getRandomResponse(responses.greetings);
     }
 
     // Farewell
     if (lowerMessage.match(/^(bye|goodbye|see you|farewell|see ya)/)) {
-        return responses.farewell[Math.floor(Math.random() * responses.farewell.length)];
+        return getRandomResponse(responses.farewell);
     }
 
     // Thanks
     if (lowerMessage.match(/(thank|thanks|thx|appreciate)/)) {
-        return responses.thanks[Math.floor(Math.random() * responses.thanks.length)];
+        return getRandomResponse(responses.thanks);
     }
 
     // How are you
     if (lowerMessage.match(/(how are you|how r u|how're you|hows it going|whats up)/)) {
-        return responses.howareyou[Math.floor(Math.random() * responses.howareyou.length)];
+        return getRandomResponse(responses.howareyou);
     }
 
     // Name
     if (lowerMessage.match(/(your name|who are you|what are you)/)) {
-        return responses.name[Math.floor(Math.random() * responses.name.length)];
+        return getRandomResponse(responses.name);
     }
 
     // Help
     if (lowerMessage.match(/(help|what can you do|your purpose|capabilities)/)) {
-        return responses.help[Math.floor(Math.random() * responses.help.length)];
+        return getRandomResponse(responses.help);
     }
 
     // Weather
@@ -160,11 +184,65 @@ function getBotResponse(message) {
         return `Today's date is ${now.toLocaleDateString()}.`;
     }
 
+    // If Ollama is available, return null to trigger Ollama call
+    if (ollamaAvailable) {
+        return null;
+    }
+
     // Default response
-    return responses.default[Math.floor(Math.random() * responses.default.length)];
+    return getRandomResponse(responses.default);
 }
 
-function sendMessage() {
+function addMessage(message, isUser) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+    
+    const avatarDiv = document.createElement('div');
+    avatarDiv.className = 'avatar';
+    avatarDiv.textContent = isUser ? '👤' : '🤖';
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    
+    // Format message with line breaks
+    const formattedMessage = message.replace(/\n/g, '<br>');
+    contentDiv.innerHTML = formattedMessage;
+    
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function showTypingIndicator() {
+    const typingDiv = document.createElement('div');
+    typingDiv.id = 'typing-indicator';
+    typingDiv.className = 'message bot-message typing-indicator';
+    
+    const avatarDiv = document.createElement('div');
+    avatarDiv.className = 'avatar';
+    avatarDiv.textContent = '🤖';
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    contentDiv.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+    
+    typingDiv.appendChild(avatarDiv);
+    typingDiv.appendChild(contentDiv);
+    
+    chatMessages.appendChild(typingDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function removeTypingIndicator() {
+    const typingIndicator = document.getElementById('typing-indicator');
+    if (typingIndicator) {
+        typingIndicator.remove();
+    }
+}
+
+async function sendMessage() {
     const message = userInput.value.trim();
     
     if (!message) return;
@@ -172,26 +250,77 @@ function sendMessage() {
     // Add user message
     addMessage(message, true);
     userInput.value = '';
+    userInput.focus();
 
     // Show typing indicator
     showTypingIndicator();
 
-    // Simulate bot thinking time
-    setTimeout(() => {
+    try {
+        // Get initial bot response from local database
+        let botResponse = getBotResponse(message);
+        
+        // If getBotResponse returns null, call Ollama
+        if (botResponse === null && ollamaAvailable) {
+            botResponse = await callOllama(message);
+            
+            // If Ollama fails, fall back to default response
+            if (!botResponse) {
+                botResponse = getRandomResponse(responses.default);
+            }
+        }
+        
+        // Remove typing indicator and show response
+        setTimeout(() => {
+            removeTypingIndicator();
+            addMessage(botResponse, false);
+        }, 500);
+        
+    } catch (error) {
+        console.error('Error sending message:', error);
         removeTypingIndicator();
-        const botResponse = getBotResponse(message);
-        addMessage(botResponse, false);
-    }, 800 + Math.random() * 400);
+        addMessage("Sorry, I encountered an error. Please try again.", false);
+    }
+}
+
+// Initialize the chat
+function initializeChat() {
+    // Check Ollama availability
+    checkOllamaAvailability();
+    
+    // Add welcome message
+    setTimeout(() => {
+        addMessage(getRandomResponse(responses.greetings), false);
+    }, 1000);
 }
 
 // Event listeners
-sendBtn.addEventListener('click', sendMessage);
+if (sendBtn) {
+    sendBtn.addEventListener('click', sendMessage);
+}
 
-userInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        sendMessage();
-    }
-});
+if (userInput) {
+    userInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+    
+    // Focus input on load
+    userInput.focus();
+}
 
-// Focus input on load
-userInput.focus();
+// Initialize chat when DOM is loaded
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeChat);
+} else {
+    initializeChat();
+}
+
+// Export for Node.js if needed
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        getBotResponse,
+        callOllama,
+        checkOllamaAvailability
+    };
+}
